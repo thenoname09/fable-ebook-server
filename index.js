@@ -5,7 +5,7 @@ const dotenv = require("dotenv").config();
 const cors = require("cors");
 const port = process.env.PORT;
 
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 
 app.use(cors());
@@ -30,7 +30,7 @@ async function run() {
     const db = client.db("FableEbookDB");
      const EbookCollection= db.collection("Ebooks"); 
 
-
+// addbook form api
 app.post("/api/ebooks",  async (req, res) => {
       const Ebook= req.body;
 
@@ -40,8 +40,32 @@ app.post("/api/ebooks",  async (req, res) => {
       console.log(result,"fsdf")
     });
 
+// // book data loadapi
+app.get("/api/ebooks/writer/:email", async (req, res) => {
+
+  const { email } = req.params;
+  const result = await EbookCollection.find({ writerEmail: email }).toArray();
+  res.json(result);
+});
 
 
+app.patch("/api/ebooks/:id", async (req, res) => {
+  const { id } = req.params;
+  const updatedData = req.body;
+
+  const result = await EbookCollection.updateOne(
+    { _id: new ObjectId(id) },   
+    { $set: updatedData }            
+  );
+
+  res.json(result);
+});
+
+app.delete("/api/ebooks/:id", async (req, res) => {
+  const { id } = req.params;
+  const result = await EbookCollection.deleteOne({ _id: new ObjectId(id) });
+  res.json(result);
+});
 
 
 
