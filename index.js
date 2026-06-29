@@ -61,6 +61,7 @@ app.patch("/api/ebooks/:id", async (req, res) => {
   res.json(result);
 });
 
+
 app.delete("/api/ebooks/:id", async (req, res) => {
   const { id } = req.params;
   const result = await EbookCollection.deleteOne({ _id: new ObjectId(id) });
