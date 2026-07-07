@@ -1,17 +1,16 @@
-const express = require('express');
+const express = require("express");
 const app = express();
 
 const dotenv = require("dotenv").config();
 const cors = require("cors");
 const port = process.env.PORT;
 
-const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
-
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 app.use(cors());
 app.use(express.json());
 
-const uri =process.env.MONGODB_URL 
+const uri = process.env.MONGODB_URL;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -19,7 +18,7 @@ const client = new MongoClient(uri, {
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
-  }
+  },
 });
 
 async function run() {
@@ -28,52 +27,121 @@ async function run() {
     await client.connect();
 
     const db = client.db("FableEbookDB");
-     const EbookCollection= db.collection("Ebooks"); 
+    const EbookCollection = db.collection("Ebooks");
+    const bookBuyCollection = db.collection("bookBuyCollections");
+    const paymentCollection = db.collection("paymentCollections");
 
-// addbook form api
-app.post("/api/ebooks",  async (req, res) => {
-      const Ebook= req.body;
+    // addbook form api
+    app.post("/api/ebooks", async (req, res) => {
+      const Ebook = req.body;
 
       const result = await EbookCollection.insertOne(Ebook);
 
       res.json(result);
-      console.log(result,"fsdf")
+      console.log(result, "fsdf");
     });
 
-// // book data loadapi
-app.get("/api/ebooks/writer/:email", async (req, res) => {
+    // //writer book data loadapi
+    // app.get("/api/ebooks/writer/:email", async (req, res) => {
 
-  const { email } = req.params;
-  const result = await EbookCollection.find({ writerEmail: email }).toArray();
-  res.json(result);
-});
+    //   const { email } = req.params;
+    //   const result = await EbookCollection.find({ writerEmail: email }).toArray();
+    //   res.json(result);
+    // });
 
+    app.get("/api/ebooks", async (req, res) => {
+      const query = {};
 
-app.patch("/api/ebooks/:id", async (req, res) => {
-  const { id } = req.params;
-  const updatedData = req.body;
+      if (req.query.writerEmail) {
+        query.writerEmail = req.query.writerEmail;
+      }
 
-  const result = await EbookCollection.updateOne(
-    { _id: new ObjectId(id) },   
-    { $set: updatedData }            
-  );
+      const result = await EbookCollection.find(query).toArray();
+      res.json(result);
+    });
 
-  res.json(result);
-});
+    app.get("/api/ebooks/:id", async (req, res) => {
+      const { id } = req.params;
+      const query = {
+        _id: new ObjectId(id),
+      };
 
+      const result = await EbookCollection.findOne(query);
+      res.json(result);
+    });
 
-app.delete("/api/ebooks/:id", async (req, res) => {
-  const { id } = req.params;
-  const result = await EbookCollection.deleteOne({ _id: new ObjectId(id) });
-  res.json(result);
-});
+    app.patch("/api/ebooks/:id", async (req, res) => {
+      const { id } = req.params;
+      const updatedData = req.body;
 
+      const result = await EbookCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updatedData },
+      );
 
+      res.json(result);
+    });
 
+    app.delete("/api/ebooks/:id", async (req, res) => {
+      const { id } = req.params;
+      const result = await EbookCollection.deleteOne({ _id: new ObjectId(id) });
+      res.json(result);
+    });
+
+    app.post("/api/bookBuyCollection", async (req, res) => {
+      const {
+        ebookId,
+        ebookTitle,
+        status,
+        coverImage,
+        amount,
+        buyerUserId,
+        buyerUserEmail,
+        buyerEmail,
+        paymentIntentId,
+      } = req.body;
+
+      const purchaseData = {
+        ebookId,
+        coverImage,
+        buyerUserId,
+        buyerUserEmail,
+
+        amount,
+        paymentIntentId,
+        status,
+        purchasedDate: new Date(),
+      };
+
+      const isPurchaseBookExist = await bookBuyCollection.findOne({
+          ebookId,
+  buyerUserId,
+      });
+      if (isPurchaseBookExist) {
+        return res.status(202).send({ message: "You already own this book " });
+      }
+
+      const buyingData = await bookBuyCollection.insertOne(purchaseData);
+
+      const paymentData = {
+        buyerUserId,
+        buyerUserEmail,
+        amount,
+        status,
+        paymentIntentId,
+        ebookId
+      };
+
+      await paymentCollection.insertOne(paymentData);
+
+      res.json(buyingData);
+    });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!",
+    );
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
@@ -81,10 +149,8 @@ app.delete("/api/ebooks/:id", async (req, res) => {
 }
 run().catch(console.dir);
 
-
-
-app.get('/', (req, res) => {
-  res.send('Hello World!');
+app.get("/", (req, res) => {
+  res.send("Hello World!");
 });
 
 app.listen(port, () => {
