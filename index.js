@@ -103,6 +103,7 @@ async function run() {
 
       const purchaseData = {
         ebookId,
+        ebookTitle,
         coverImage,
         buyerUserId,
         buyerUserEmail,
@@ -136,6 +137,21 @@ async function run() {
 
       res.json(buyingData);
     });
+
+    // user purchasedBooks show
+app.get("/api/bookBuyCollection/:userId", async (req, res, next) => {
+  const { userId } = req.params;
+
+  const query = { buyerUserId: userId };
+  const purchasedBooks = await bookBuyCollection.find(query).toArray();
+
+  res.send(purchasedBooks);
+});
+
+
+
+
+
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
