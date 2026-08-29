@@ -30,6 +30,7 @@ async function run() {
     const EbookCollection = db.collection("Ebooks");
     const bookBuyCollection = db.collection("bookBuyCollections");
     const paymentCollection = db.collection("paymentCollections");
+    const usersCollection = db.collection("user")
 
     // addbook form api
     app.post("/api/ebooks", async (req, res) => {
@@ -88,73 +89,118 @@ async function run() {
       res.json(result);
     });
 
-    app.post("/api/bookBuyCollection", async (req, res) => {
-      const {
-        ebookId,
-        ebookTitle,
-        status,
-        coverImage,
-        amount,
-        buyerUserId,
-        buyerUserEmail,
-        buyerEmail,
-        paymentIntentId,
-      } = req.body;
+  app.post("/api/bookBuyCollection", async (req, res) => {
+  try {
+    const {
+      ebookId,
+      ebookTitle,
+      status,
+      coverImage,
+      amount,
+      buyerUserId,
+      buyerUserEmail,
+      paymentIntentId,
+    } = req.body; 
 
-      const purchaseData = {
-        ebookId,
-        ebookTitle,
-        coverImage,
-        buyerUserId,
-        buyerUserEmail,
+    const purchaseData = {
+      ebookId,
+      ebookTitle,
+      coverImage,
+      buyerUserId,
+      buyerUserEmail,
+      amount,
+      paymentIntentId,
+      status,
+      purchasedDate: new Date(),
+    };
 
-        amount,
-        paymentIntentId,
-        status,
-        purchasedDate: new Date(),
-      };
+    // 1. Block Writers and Admins
+    const buyer = await usersCollection.findOne({ email: buyerUserEmail });
 
-      const isPurchaseBookExist = await bookBuyCollection.findOne({
-          ebookId,
-  buyerUserId,
+    if (buyer && (buyer.role === "writer" || buyer.role === "admin")) {
+      return res.status(403).json({ 
+        message: "Action denied: Admins and Writers cannot purchase books." 
       });
-      if (isPurchaseBookExist) {
-        return res.status(202).send({ message: "You already own this book " });
-      }
+    }
 
-      const buyingData = await bookBuyCollection.insertOne(purchaseData);
-
-      const paymentData = {
-        buyerUserId,
-        buyerUserEmail,
-        amount,
-        status,
-        paymentIntentId,
-        ebookId
-      };
-
-      await paymentCollection.insertOne(paymentData);
-
-      res.json(buyingData);
+    // 2. Prevent double-purchasing
+    const isPurchaseBookExist = await bookBuyCollection.findOne({
+      ebookId,
+      buyerUserId,
     });
 
-    // user purchasedBooks show
-app.get("/api/bookBuyCollection/:userId", async (req, res, next) => {
-  const { userId } = req.params;
+    if (isPurchaseBookExist) {
+      return res.status(409).send({ message: "You already own this book" });
+    }
 
-  const query = { buyerUserId: userId };
-  const purchasedBooks = await bookBuyCollection.find(query).toArray();
+    // 3. Save the purchase
+    const buyingData = await bookBuyCollection.insertOne(purchaseData);
 
-  res.send(purchasedBooks);
+    // 4. Save the payment
+    const paymentData = {
+      buyerUserId,
+      buyerUserEmail,
+      amount,
+      status,
+      paymentIntentId,
+      ebookId,
+      ebookTitle,
+      createdAt: new Date(),
+    };
+
+    await paymentCollection.insertOne(paymentData);
+
+    // 5. Send success response
+    res.status(201).json(buyingData);
+
+  } catch (error) {
+    // This catches any database errors and stops your server from crashing
+    console.error("Error processing purchase:", error);
+    res.status(500).json({ message: "Internal server error", error: error.message });
+  }
 });
 
+    // user purchasedBooks show api
+    app.get("/api/bookBuyCollection/:userId", async (req, res, next) => {
+      const { userId } = req.params;
 
+      const query = { buyerUserId: userId };
+      const purchasedBooks = await bookBuyCollection.find(query).toArray();
 
+      res.send(purchasedBooks);
+    });
 
+    // user purchased ebook full details
+    app.get("/api/bookBuyCollection/:userId/:ebookId", async (req, res) => {
+      const { userId, ebookId } = req.params;
 
+      const purchasedBook = await bookBuyCollection.findOne({
+        buyerUserId: userId,
+        ebookId: ebookId,
+      });
+
+      if (!purchasedBook) {
+        return res.status(404).send({ message: "Purchase not found" });
+      }
+
+      res.json(purchasedBook);
+    });
+
+    // Get payments for a specific user
+    app.get("/api/paymentCollection/:userId", async (req, res, next) => {
+      const { userId } = req.params;
+
+      const query = { buyerUserId: userId };
+      const payments = await paymentCollection
+        .find(query)
+        .sort({ _id: -1 })
+        .toArray();
+
+      res.send(payments);
+    });
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!",
     );
