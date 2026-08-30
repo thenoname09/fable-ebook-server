@@ -30,7 +30,7 @@ async function run() {
     const EbookCollection = db.collection("Ebooks");
     const bookBuyCollection = db.collection("bookBuyCollections");
     const paymentCollection = db.collection("paymentCollections");
-    const usersCollection = db.collection("user")
+    const usersCollection = db.collection("user");
 
     // addbook form api
     app.post("/api/ebooks", async (req, res) => {
@@ -56,6 +56,8 @@ async function run() {
       if (req.query.writerEmail) {
         query.writerEmail = req.query.writerEmail;
       }
+
+      if (req.query.writerId) query.writerId = req.query.writerId;
 
       const result = await EbookCollection.find(query).toArray();
       res.json(result);
@@ -89,76 +91,77 @@ async function run() {
       res.json(result);
     });
 
-  app.post("/api/bookBuyCollection", async (req, res) => {
-  try {
-    const {
-      ebookId,
-      ebookTitle,
-      status,
-      coverImage,
-      amount,
-      buyerUserId,
-      buyerUserEmail,
-      paymentIntentId,
-    } = req.body; 
+    app.post("/api/bookBuyCollection", async (req, res) => {
+      try {
+        const {
+          ebookId,
+          ebookTitle,
+          status,
+          coverImage,
+          amount,
+          buyerUserId,
+          buyerUserEmail,
+          paymentIntentId,
+        } = req.body;
 
-    const purchaseData = {
-      ebookId,
-      ebookTitle,
-      coverImage,
-      buyerUserId,
-      buyerUserEmail,
-      amount,
-      paymentIntentId,
-      status,
-      purchasedDate: new Date(),
-    };
+        const purchaseData = {
+          ebookId,
+          ebookTitle,
+          coverImage,
+          buyerUserId,
+          buyerUserEmail,
+          amount,
+          paymentIntentId,
+          status,
+          purchasedDate: new Date(),
+        };
 
-    // 1. Block Writers and Admins
-    const buyer = await usersCollection.findOne({ email: buyerUserEmail });
+        // 1. Block Writers and Admins
+        const buyer = await usersCollection.findOne({ email: buyerUserEmail });
 
-    if (buyer && (buyer.role === "writer" || buyer.role === "admin")) {
-      return res.status(403).json({ 
-        message: "Action denied: Admins and Writers cannot purchase books." 
-      });
-    }
+        if (buyer && (buyer.role === "writer" || buyer.role === "admin")) {
+          return res.status(403).json({
+            message: "Action denied: Admins and Writers cannot purchase books.",
+          });
+        }
 
-    // 2. Prevent double-purchasing
-    const isPurchaseBookExist = await bookBuyCollection.findOne({
-      ebookId,
-      buyerUserId,
+        // 2. Prevent double-purchasing
+        const isPurchaseBookExist = await bookBuyCollection.findOne({
+          ebookId,
+          buyerUserId,
+        });
+
+        if (isPurchaseBookExist) {
+          return res.status(409).send({ message: "You already own this book" });
+        }
+
+        // 3. Save the purchase
+        const buyingData = await bookBuyCollection.insertOne(purchaseData);
+
+        // 4. Save the payment
+        const paymentData = {
+          buyerUserId,
+          buyerUserEmail,
+          amount,
+          status,
+          paymentIntentId,
+          ebookId,
+          ebookTitle,
+          createdAt: new Date(),
+        };
+
+        await paymentCollection.insertOne(paymentData);
+
+        // 5. Send success response
+        res.status(201).json(buyingData);
+      } catch (error) {
+        // This catches any database errors and stops your server from crashing
+        console.error("Error processing purchase:", error);
+        res
+          .status(500)
+          .json({ message: "Internal server error", error: error.message });
+      }
     });
-
-    if (isPurchaseBookExist) {
-      return res.status(409).send({ message: "You already own this book" });
-    }
-
-    // 3. Save the purchase
-    const buyingData = await bookBuyCollection.insertOne(purchaseData);
-
-    // 4. Save the payment
-    const paymentData = {
-      buyerUserId,
-      buyerUserEmail,
-      amount,
-      status,
-      paymentIntentId,
-      ebookId,
-      ebookTitle,
-      createdAt: new Date(),
-    };
-
-    await paymentCollection.insertOne(paymentData);
-
-    // 5. Send success response
-    res.status(201).json(buyingData);
-
-  } catch (error) {
-    // This catches any database errors and stops your server from crashing
-    console.error("Error processing purchase:", error);
-    res.status(500).json({ message: "Internal server error", error: error.message });
-  }
-});
 
     // user purchasedBooks show api
     app.get("/api/bookBuyCollection/:userId", async (req, res, next) => {
@@ -197,6 +200,68 @@ async function run() {
         .toArray();
 
       res.send(payments);
+    });
+
+    // GET all users (for admin table)
+    app.get("/api/users", async (req, res) => {
+      try {
+        const result = await usersCollection
+          .find(
+            {},
+            {
+              projection: {
+                name: 1,
+                email: 1,
+                role: 1,
+                image: 1,
+                createdAt: 1,
+              },
+            },
+          )
+          .toArray();
+        res.json(result);
+      } catch (error) {
+        console.error("Error fetching users:", error);
+        res
+          .status(500)
+          .json({ message: "Internal server error", error: error.message });
+      }
+    });
+
+    // PATCH — change a user's role
+    app.patch("/api/users/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const updatedData = req.body; // e.g. { role: "writer" }
+
+        const result = await usersCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updatedData },
+        );
+
+        res.json(result);
+      } catch (error) {
+        console.error("Error updating user:", error);
+        res
+          .status(500)
+          .json({ message: "Internal server error", error: error.message });
+      }
+    });
+
+    // DELETE a user
+    app.delete("/api/users/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const result = await usersCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+        res.json(result);
+      } catch (error) {
+        console.error("Error deleting user:", error);
+        res
+          .status(500)
+          .json({ message: "Internal server error", error: error.message });
+      }
     });
 
     // Send a ping to confirm a successful connection
