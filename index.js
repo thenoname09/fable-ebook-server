@@ -124,16 +124,23 @@ app.post("/api/ebooks", verifyToken, requireWriter, async (req, res) => {
 // });
 
 app.get("/api/ebooks", async (req, res) => {
-  const query = {};
+  try {
+    const query = {};
+    if (req.query.writerEmail) query.writerEmail = req.query.writerEmail;
+    if (req.query.writerId) query.writerId = req.query.writerId;
+    if (req.query.status) query.status = req.query.status;
 
-  if (req.query.writerEmail) {
-    query.writerEmail = req.query.writerEmail;
+    let cursor = EbookCollection.find(query).sort({ createdAt: -1 }); 
+    if (req.query.limit) {
+      cursor = cursor.limit(parseInt(req.query.limit, 8)); // ADDED
+    }
+
+    const result = await cursor.toArray();
+    res.json(result);
+  } catch (error) {
+    console.error("Error fetching ebooks:", error);
+    res.status(500).json({ message: "Internal server error", error: error.message });
   }
-
-  if (req.query.writerId) query.writerId = req.query.writerId;
-  if (req.query.status) query.status = req.query.status;
-  const result = await EbookCollection.find(query).toArray();
-  res.json(result);
 });
 
 //  to see Writer own manage ebook list
@@ -478,8 +485,69 @@ app.get("/api/reader/:userId/stats", verifyToken, verifyReader,async (req, res) 
 });
 
 
+app.get("/api/admin/analytics", verifyToken, requireAdmin, async (req, res) => {
+  try {
+    const userStats = await usersCollection.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalUsers: { $sum: 1 },
+          totalWriters: { $sum: { $cond: [{ $eq: ["$role", "writer"] }, 1, 0] } },
+   
+          totalReaders: { $sum: { $cond: [{ $eq: ["$role", "reader"] }, 1, 0] } },
+        },
+      },
+      { $project: { _id: 0 } },
+    ]).toArray();
 
+    const salesStats = await bookBuyCollection.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalEbooksSold: { $sum: 1 },
+          totalRevenue: { $sum: { $toDouble: "$amount" } },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          totalEbooksSold: 1,
+          totalRevenue: { $round: ["$totalRevenue", 2] },
+        },
+      },
+    ]).toArray();
 
+    // ADDED — total ebooks on the platform, published or not
+    const bookStats = await EbookCollection.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalBooks: { $sum: 1 },
+          totalPublished: { $sum: { $cond: [{ $eq: ["$status", "published"] }, 1, 0] } },
+          totalUnpublished: { $sum: { $cond: [{ $ne: ["$status", "published"] }, 1, 0] } },
+        },
+      },
+      { $project: { _id: 0 } },
+    ]).toArray();
+
+    const result = {
+      totalUsers: userStats[0]?.totalUsers || 0,
+      totalWriters: userStats[0]?.totalWriters || 0,
+   
+      totalReaders: userStats[0]?.totalReaders || 0,
+      totalEbooksSold: salesStats[0]?.totalEbooksSold || 0,
+      totalRevenue: salesStats[0]?.totalRevenue || 0,
+      totalBooks: bookStats[0]?.totalBooks || 0, 
+      totalPublished: bookStats[0]?.totalPublished || 0, 
+      totalUnpublished: bookStats[0]?.totalUnpublished || 0, 
+    };
+
+    res.json(result);
+  } catch (error) {
+    console.error("Error fetching admin analytics:", error);
+    res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+});
 
 
 
