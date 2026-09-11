@@ -550,7 +550,75 @@ app.get("/api/admin/analytics", verifyToken, requireAdmin, async (req, res) => {
 });
 
 
+app.get("/api/public/top-writers", async (req, res) => {
+  try {
+    const topWriters = await bookBuyCollection.aggregate([
+      // join each purchase to its book, to get writerId
+      {
+        $lookup: {
+          from: "Ebooks",
+          let: { ebookIdStr: "$ebookId" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: [{ $toString: "$_id" }, "$$ebookIdStr"] },
+              },
+            },
+            { $project: { writerId: 1, writerName: 1 } },
+          ],
+          as: "bookInfo",
+        },
+      },
+      { $unwind: "$bookInfo" },
 
+      //  group by writer, count sales
+      {
+        $group: {
+          _id: "$bookInfo.writerId",
+          writerName: { $first: "$bookInfo.writerName" },
+          totalSales: { $sum: 1 },
+        },
+      },
+
+      //  top 3 by sales
+      { $sort: { totalSales: -1 } },
+      { $limit: 3 },
+
+      // Step 4: join to user collection for avatar image
+      {
+        $lookup: {
+          from: "user",
+          let: { writerIdStr: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: [{ $toString: "$_id" }, "$$writerIdStr"] },
+              },
+            },
+            { $project: { image: 1 } },
+          ],
+          as: "userInfo",
+        },
+      },
+
+      //  final output
+      {
+        $project: {
+          _id: 0,
+          writerId: "$_id",
+          writerName: 1,
+          totalSales: 1,
+          image: { $arrayElemAt: ["$userInfo.image", 0] },
+        },
+      },
+    ]).toArray();
+
+    res.json(topWriters);
+  } catch (error) {
+    console.error("Error fetching top writers:", error);
+    res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+});
 
 
 
