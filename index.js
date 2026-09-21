@@ -130,9 +130,27 @@ app.get("/api/ebooks", async (req, res) => {
     if (req.query.writerId) query.writerId = req.query.writerId;
     if (req.query.status) query.status = req.query.status;
 
-    let cursor = EbookCollection.find(query).sort({ createdAt: -1 }); 
+ 
+    if (req.query.genre && req.query.genre !== "all") {
+      query.genre = req.query.genre;
+    }
+    if (req.query.search) {
+      query.title = { $regex: req.query.search, $options: "i" };
+    }
+
+    let cursor = EbookCollection.find(query);
+
+    // CHANGED — sort now respects req.query.sort instead of always newest
+    if (req.query.sort === "price-low") {
+      cursor = cursor.sort({ price: 1 });
+    } else if (req.query.sort === "price-high") {
+      cursor = cursor.sort({ price: -1 });
+    } else {
+      cursor = cursor.sort({ createdAt: -1 });
+    }
+
     if (req.query.limit) {
-      cursor = cursor.limit(parseInt(req.query.limit, 8)); // ADDED
+      cursor = cursor.limit(parseInt(req.query.limit, 10)); // FIXED radix
     }
 
     const result = await cursor.toArray();
