@@ -140,7 +140,7 @@ app.get("/api/ebooks", async (req, res) => {
     if (req.query.page) {
       const page = parseInt(req.query.page, 10); 
       const perPage = parseInt(req.query.limit, 10) || 8;
-      const skipItems = (page - 1) * perPage;
+      const skipItems = (page - 1) * perPage; 
 
       const total = await EbookCollection.countDocuments(query);
       const cursor = EbookCollection.find(query).sort(sortStage).skip(skipItems).limit(perPage);
