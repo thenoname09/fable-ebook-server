@@ -122,37 +122,38 @@ app.post("/api/ebooks", verifyToken, requireWriter, async (req, res) => {
 //   const result = await EbookCollection.find({ writerEmail: email }).toArray();
 //   res.json(result);
 // });
-
 app.get("/api/ebooks", async (req, res) => {
   try {
     const query = {};
+
     if (req.query.writerEmail) query.writerEmail = req.query.writerEmail;
     if (req.query.writerId) query.writerId = req.query.writerId;
     if (req.query.status) query.status = req.query.status;
+    if (req.query.genre && req.query.genre !== "all") query.genre = req.query.genre;
+    if (req.query.search) query.title = { $regex: req.query.search, $options: "i" };
 
- 
-    if (req.query.genre && req.query.genre !== "all") {
-      query.genre = req.query.genre;
+    let sortStage = { createdAt: -1 };
+    if (req.query.sort === "price-low") sortStage = { price: 1 };
+    else if (req.query.sort === "price-high") sortStage = { price: -1 };
+
+    // pagination related work
+    if (req.query.page) {
+      const page = parseInt(req.query.page, 10); 
+      const perPage = parseInt(req.query.limit, 10) || 8;
+      const skipItems = (page - 1) * perPage;
+
+      const total = await EbookCollection.countDocuments(query);
+      const cursor = EbookCollection.find(query).sort(sortStage).skip(skipItems).limit(perPage);
+      const books = await cursor.toArray();
+
+      return res.json({ total, books, page, limit: perPage });
     }
-    if (req.query.search) {
-      query.title = { $regex: req.query.search, $options: "i" };
-    }
 
-    let cursor = EbookCollection.find(query);
-
-    // CHANGED — sort now respects req.query.sort instead of always newest
-    if (req.query.sort === "price-low") {
-      cursor = cursor.sort({ price: 1 });
-    } else if (req.query.sort === "price-high") {
-      cursor = cursor.sort({ price: -1 });
-    } else {
-      cursor = cursor.sort({ createdAt: -1 });
-    }
-
+   
+    let cursor = EbookCollection.find(query).sort(sortStage);
     if (req.query.limit) {
-      cursor = cursor.limit(parseInt(req.query.limit, 10)); // FIXED radix
+      cursor = cursor.limit(parseInt(req.query.limit, 10));
     }
-
     const result = await cursor.toArray();
     res.json(result);
   } catch (error) {
