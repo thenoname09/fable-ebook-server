@@ -187,13 +187,24 @@ app.get("/api/ebooks/manage", verifyToken, requireWriter, async (req, res) => {
 });
 
 app.get("/api/ebooks/:id", async (req, res) => {
-  const { id } = req.params;
-  const query = {
-    _id: new ObjectId(id),
-  };
+  try {
+    const { id } = req.params;
 
-  const result = await EbookCollection.findOne(query);
-  res.json(result);
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid book ID" });
+    }
+
+    const result = await EbookCollection.findOne({ _id: new ObjectId(id) });
+
+    if (!result) {
+      return res.status(404).json({ message: "Book not found" });
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error("Error fetching book:", error);
+    res.status(500).json({ message: "Internal server error", error: error.message });
+  }
 });
 
 app.patch(
